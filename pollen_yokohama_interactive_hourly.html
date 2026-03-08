@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>花粉飛散比較（全国対応）</title>
+  <link rel="icon" type="image/png" sizes="180x180" href="pollen_icon_180.png">
+  <link rel="icon" type="image/png" sizes="1024x1024" href="pollen_icon_1024.png">
+  <link rel="apple-touch-icon" href="pollen_icon_180.png">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #334155;
+      --muted: #64748b;
+      --accent1: #3b82f6;
+      --accent2: #10b981;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .header { margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
+    .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    h2 { font-size: 14px; margin-top: 0; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    h2::before { content: ''; width: 4px; height: 16px; background: var(--accent1); border-radius: 2px; }
+    .card-green h2::before { background: var(--accent2); }
+    
+    label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; }
+    select, input {
+      width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 13px; margin-bottom: 12px; background: #fff;
+    }
+    .select-group { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    button {
+      border: 0; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.2s; background: #1e293b; color: white;
+    }
+    button.light { background: #f1f5f9; color: #475569; border: 1px solid var(--border); }
+    button:hover { opacity: 0.9; }
+    
+    .chart-container { margin-top: 24px; position: relative; }
+    #chartCanvas { width: 100%; height: 400px; background: white; border-radius: 12px; border: 1px solid var(--border); }
+    
+    .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
+    .stat-item { background: white; padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+    .stat-label { font-size: 11px; color: var(--muted); }
+    .stat-value { font-size: 18px; font-weight: 700; }
+    
+    .table-container { margin-top: 24px; background: white; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { background: #f8fafc; padding: 12px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; }
+    
+    #tooltip {
+      position: absolute; pointer-events: none; background: rgba(15, 23, 42, 0.9);
+      color: white; padding: 8px 12px; border-radius: 6px; font-size: 11px; display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>花粉飛散比較（全国対応）</h1>
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">1時間ごとの観測値に基づき、指定した2地点の飛散状況を比較します。</div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>地点1 (Blue)</h2>
+        <div class="select-group">
+          <div><label>県</label><select id="p1"></select></div>
+          <div><label>市</label><select id="c1"></select></div>
+          <div><label>地点</label><select id="t1"></select></div>
+        </div>
+        <div style="font-size:11px;"><input id="s1" type="checkbox" checked> <label for="s1" style="display:inline;">グラフに表示</label></div>
+      </div>
+
+      <div class="card card-green">
+        <h2>地点2 (Green)</h2>
+        <div class="select-group">
+          <div><label>県</label><select id="p2"></select></div>
+          <div><label>市</label><select id="c2"></select></div>
+          <div><label>地点</label><select id="t2"></select></div>
+        </div>
+        <div style="font-size:11px;"><input id="s2" type="checkbox" checked> <label for="s2" style="display:inline;">グラフに表示</label></div>
+      </div>
+
+      <div class="card">
+        <h2>期間 & 取得</h2>
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1;"><label>Start</label><input id="sd" type="date"></div>
+          <div style="flex:1;"><label>End</label><input id="ed" type="date"></div>
+        </div>
+        <div class="btn-row">
+          <button id="fb" style="flex:1;">データ取得</button>
+          <button onclick="sq(24)" class="light">24h</button>
+          <button onclick="sq(168)" class="light">7日間</button>
+        </div>
+        <div id="st" style="font-size:11px; margin-top:8px; color:var(--muted);"></div>
+        <div style="font-size:10px; color:var(--muted); margin-top:2px;">※取得したデータはローカルにキャッシュされ、同じ期間を指定すると再利用されます。</div>
+      </div>
+    </div>
+
+    <div class="chart-container">
+      <div id="leg" style="display:flex; gap:16px; margin-bottom:8px; font-size:12px; font-weight:600;">
+        <span style="color:var(--accent1)">● <span id="ln1">-</span></span>
+        <span style="color:var(--accent2)">● <span id="ln2">-</span></span>
+      </div>
+      <canvas id="chartCanvas"></canvas>
+      <div id="tooltip"></div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-item"><div class="stat-label" id="sl1">-</div><div class="stat-value" id="sv1">-</div></div>
+      <div class="stat-item"><div class="stat-label" id="sa1">平均</div><div class="stat-value" id="av1">-</div></div>
+      <div class="stat-item"><div class="stat-label" id="ss1">標準偏差</div><div class="stat-value" id="sd1">-</div></div>
+      <div class="stat-item"><div class="stat-label" id="sl2">-</div><div class="stat-value" id="sv2">-</div></div>
+      <div class="stat-item"><div class="stat-label" id="sa2">平均</div><div class="stat-value" id="av2">-</div></div>
+      <div class="stat-item"><div class="stat-label" id="ss2">標準偏差</div><div class="stat-value" id="sd2">-</div></div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr><th>日時</th><th id="th1">地点1</th><th id="th2">地点2</th></tr>
+        </thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script>
+    /*
+     * REGIONS: hierarchical mapping prefecture -> city -> placeName: citycode
+     * The file regions.json (loaded from the same directory) contains the
+     * full nationwide list.  If the file cannot be fetched the script falls
+     * back to DEFAULT_REGIONS which is just a small subset used for testing.
+     *
+     * To update the list you can download the official municipality codes
+     * (e.g. 総務省 全国地方公共団体コード) or create your own JSON.  The
+     * structure must match the sample below.
+     */
+    // --- region list (will be replaced by regions.json if available) ---
+    let REGIONS = {};
+    const DEFAULT_REGIONS = {
+      "神奈川県": {
+        "横浜市": { "栄区": "14115", "港南区": "14111", "西区": "14103", "中区": "14104", "青葉区": "14117", "港北区": "14109" },
+        "川崎市": { "川崎区": "14131", "中原区": "14133", "麻生区": "14137" }
+      },
+      "東京都": {
+        "23区": { "江東区": "13108", "千代田区": "13101", "中央区": "13102", "港区": "13103", "新宿区": "13104", "世田谷区": "13112", "渋谷区": "13113", "練馬区": "13120", "足立区": "13121" },
+        "多摩地区": { "八王子市": "13201", "町田市": "13209" }
+      }
+    };
+
+    function normalizeRegions(data) {
+      const norm = {};
+      for (const pref in data) {
+        norm[pref] = {};
+        for (const city in data[pref]) {
+          norm[pref][city] = {};
+          for (const loc in data[pref][city]) {
+            let v = data[pref][city][loc];
+            if (!Array.isArray(v)) v = [v];
+            norm[pref][city][loc] = v;
+          }
+        }
+      }
+      return norm;
+    }
+
+    async function loadRegions() {
+      const cached = localStorage.getItem('pollen_regions');
+      if (cached) {
+        try { REGIONS = JSON.parse(cached); return; } catch(e){ console.warn('invalid cache', e); }
+      }
+      try {
+        const r = await fetch('regions.json');
+        if (!r.ok) throw new Error(r.statusText);
+        REGIONS = await r.json();
+        REGIONS = normalizeRegions(REGIONS);
+        localStorage.setItem('pollen_regions', JSON.stringify(REGIONS));
+      } catch (e) {
+        console.warn('unable to load regions.json, probably CORS or file protocol; using default subset', e);
+        REGIONS = normalizeRegions(DEFAULT_REGIONS);
+      }
+    }
+
+    // simple cache helper for API calls
+    async function fetchWithCache(url) {
+      const key = 'pollen_cache:' + url;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const now = new Date().toLocaleTimeString();
+        document.getElementById('st').textContent = `キャッシュ利用 (${now})`;
+        return stored;
+      }
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        const txt = await r.text();
+        localStorage.setItem(key, txt);
+        return txt;
+      } catch (err) {
+        console.error('fetchWithCache failed', url, err);
+        throw err;
+      }
+    }
+
+    let chart = null;
+    function initChart() {
+      const ctx = document.getElementById('chartCanvas').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: {
+              type: 'category',
+              ticks: {
+                maxRotation: 0,
+                minRotation: 0,
+                maxTicksLimit: 12,
+                callback: function(value, index) {
+                  if (!app.data[index]) return '';
+                  const date = new Date(app.data[index].ts);
+                  const hour = date.getHours();
+                  // 各日の0時に日付を表示、その他は時刻のみ
+                  if (hour === 0) {
+                    return [date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), hour + '時'];
+                  }
+                  return hour + '時';
+                }
+              },
+              title: { display: true, text: '日時' }
+            },
+            y: { beginAtZero: true, title: { display: true, text: '飛散数' } }
+          },
+          plugins: { legend: { position: 'top' }, tooltip: { enabled: true } }
+        }
+      });
+    }
+
+    const API = 'https://wxtech.weathernews.com/opendata/v1/pollen';
+    let app = { data: [], names: ["",""], colors: ['#3b82f6','#10b981'] };
+
+    function setup(id) {
+      const p = document.getElementById('p'+id), c = document.getElementById('c'+id), t = document.getElementById('t'+id);
+      Object.keys(REGIONS).forEach(k => p.add(new Option(k,k)));
+      p.onchange = () => {
+        c.innerHTML = '';
+        Object.keys(REGIONS[p.value]).forEach(k=>c.add(new Option(k,k)));
+        c.onchange();
+      };
+      c.onchange = () => {
+        t.innerHTML = '';
+        Object.entries(REGIONS[p.value][c.value]).forEach(([name,codes])=>{
+          t.add(new Option(name, JSON.stringify(codes)));
+        });
+      };
+      p.onchange();
+    }
+
+    async function fetchX() {
+      const btn = document.getElementById('fb'), st = document.getElementById('st');
+      const codes1 = JSON.parse(document.getElementById('t1').value);
+      const codes2 = JSON.parse(document.getElementById('t2').value);
+      const start = document.getElementById('sd').value.replace(/-/g,'');
+      const end = document.getElementById('ed').value.replace(/-/g,'');
+      if(!start||!end) return;
+      btn.disabled = true; st.textContent='データ取得中...';
+      app.names = [
+        document.getElementById('t1').selectedOptions[0].text,
+        document.getElementById('t2').selectedOptions[0].text
+      ];
+      try {
+        const [r1s,r2s] = await Promise.all([
+          Promise.all(codes1.map(c=>fetchWithCache(`${API}?citycode=${c}&start=${start}&end=${end}`))),
+          Promise.all(codes2.map(c=>fetchWithCache(`${API}?citycode=${c}&start=${start}&end=${end}`)))
+        ]);
+        const p1 = aggregateCsvList(r1s, app.names[0]);
+        const p2 = aggregateCsvList(r2s, app.names[1]);
+        const m=new Map();
+        [...p1,...p2].forEach(d=>{
+          if(!m.has(d.ts)) m.set(d.ts,{ts:d.ts,iso:d.iso,[app.names[0]]:null,[app.names[1]]:null});
+          m.get(d.ts)[d.name]=d.val;
+        });
+        app.data=Array.from(m.values()).sort((a,b)=>a.ts-b.ts);
+        render();
+        st.textContent=`完了: ${app.data.length}件のデータ`;
+      } catch(e){
+        console.error('fetchX error', e);
+        st.textContent = 'エラー発生: ' + (e.message || e);
+      } finally{btn.disabled=false;}
+    }
+
+    function parse(txt,name){
+      const lines=txt.trim().split(/\r?\n/);
+      return lines.slice(1).map(l=>{
+        const c=l.split(',');
+        const dt=c[1].replace(/"/g,'');
+        return{ts:Date.parse(dt),iso:dt,val:parseFloat(c[2])===-9999?null:parseFloat(c[2]),name};
+      }).filter(d=>!isNaN(d.ts));
+    }
+
+    // combine multiple csv texts (same name) into averaged series with stats
+    function aggregateCsvList(txts,name){
+      const seriesList = txts.map(t=>parse(t,name));
+      const m=new Map();
+      seriesList.forEach(arr=>{
+        arr.forEach(d=>{
+          if(!m.has(d.ts)) m.set(d.ts,{ts:d.ts,iso:d.iso,vals:[]});
+          if(d.val!=null) m.get(d.ts).vals.push(d.val);
+        });
+      });
+      return Array.from(m.values()).sort((a,b)=>a.ts-b.ts).map(o=>{
+        const vals=o.vals;
+        const n=vals.length;
+        const mean = n ? vals.reduce((x,y)=>x+y,0)/n : null;
+        const variance = n ? vals.reduce((x,y)=>x+(y-mean)**2,0)/n : null;
+        const sd = variance!=null ? Math.sqrt(variance) : null;
+        return {ts:o.ts,iso:o.iso,val:mean,n,sd,name};
+      });
+    }
+
+    function render(){
+      const [n1,n2]=app.names;
+      document.getElementById('ln1').textContent=n1;
+      document.getElementById('ln2').textContent=n2;
+      document.getElementById('th1').textContent=n1;
+      document.getElementById('th2').textContent=n2;
+      document.getElementById('sl1').textContent=n1+' 観測数';
+      document.getElementById('sl2').textContent=n2+' 観測数';
+      const v1=app.data.map(d=>d[n1]).filter(v=>v!==null);
+      const v2=app.data.map(d=>d[n2]).filter(v=>v!==null);
+      function stats(arr){
+        const n=arr.length;
+        if(!n) return {n:0,mean:'-',sd:'-'};
+        const mean=arr.reduce((a,b)=>a+b,0)/n;
+        const sd=Math.sqrt(arr.reduce((a,b)=>a+(b-mean)**2,0)/n);
+        return {n,mean:mean.toFixed(1),sd:sd.toFixed(1)};
+      }
+      const s1=stats(v1), s2=stats(v2);
+      document.getElementById('sv1').textContent=s1.n;
+      document.getElementById('av1').textContent=s1.mean;
+      document.getElementById('sd1').textContent=s1.sd;
+      document.getElementById('sv2').textContent=s2.n;
+      document.getElementById('av2').textContent=s2.mean;
+      document.getElementById('sd2').textContent=s2.sd;
+      document.getElementById('tb').innerHTML=
+        app.data.slice().reverse().slice(0,50).map(d=>
+          `<tr><td>${new Date(d.ts).toLocaleString('ja-JP',{month:'2-digit',day:'2-digit',hour:'2-digit'})}時</td>`+
+          `<td>${d[n1]??'-'}</td><td>${d[n2]??'-'}</td></tr>`
+        ).join('');
+      updateChart();
+    }
+
+    function updateChart(){
+      if(!chart) return;
+      const labels=app.data.map(d=>d.iso);
+      const ds1={label:app.names[0],data:app.data.map(d=>d[app.names[0]]),borderColor:app.colors[0],spanGaps:true,hidden:!document.getElementById('s1').checked};
+      const ds2={label:app.names[1],data:app.data.map(d=>d[app.names[1]]),borderColor:app.colors[1],spanGaps:true,hidden:!document.getElementById('s2').checked};
+      chart.data.labels=labels;chart.data.datasets=[ds1,ds2];chart.update();
+    }
+
+    function sq(h){
+      const e=new Date(),s=new Date(e.getTime()-h*3600000);
+      document.getElementById('sd').value=s.toISOString().split('T')[0];
+      document.getElementById('ed').value=e.toISOString().split('T')[0];
+      fetchX();
+    }
+
+    (async()=>{
+      await loadRegions();
+      setup('1');setup('2');
+      initChart();
+      const d=new Date();document.getElementById('ed').value=d.toISOString().split('T')[0];
+      d.setDate(d.getDate()-7);document.getElementById('sd').value=d.toISOString().split('T')[0];
+      document.getElementById('p1').value="神奈川県";document.getElementById('p1').onchange();
+      document.getElementById('c1').value="横浜市";document.getElementById('c1').onchange();
+      document.getElementById('t1').value=JSON.stringify(["14115"]);
+      document.getElementById('p2').value="東京都";document.getElementById('p2').onchange();
+      document.getElementById('c2').value="23区";document.getElementById('c2').onchange();
+      document.getElementById('t2').value=JSON.stringify(["13108"]);
+      document.getElementById('fb').onclick=fetchX;
+      document.getElementById('s1').addEventListener('change',updateChart);
+      document.getElementById('s2').addEventListener('change',updateChart);
+      window.onresize=()=>chart.resize();
+    })();
+  </script>
+</body>
+</html>
