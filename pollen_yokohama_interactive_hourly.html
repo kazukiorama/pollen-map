@@ -144,7 +144,19 @@
       </table>
     </div>
   </div>
-
+<script>
+  (function(){
+    const key = 'pollen_auth';
+    if (sessionStorage.getItem(key) !== '1') {
+      const pw = prompt('パスワードを入力してください');
+      if (pw !== 'MiniCooper2646') {
+        document.body.innerHTML = '<p style="padding:2rem">認証失敗</p>';
+        throw new Error('auth');
+      }
+      sessionStorage.setItem(key, '1');
+    }
+  })();
+</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script>
     /*
