@@ -82,6 +82,31 @@
     }
     .site-footer a { color: var(--muted); text-decoration: underline; }
     .site-footer a:hover { color: var(--text); }
+
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(248, 250, 252, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      gap: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      z-index: 10;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent1);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -134,6 +159,10 @@
         <span style="color:var(--accent2)">● <span id="ln2">-</span></span>
       </div>
       <canvas id="chartCanvas"></canvas>
+      <div id="loadingOverlay" class="loading-overlay" style="display:none;">
+        <div class="spinner"></div>
+        <span>データ取得中...</span>
+      </div>
       <div id="tooltip"></div>
     </div>
 
@@ -235,11 +264,7 @@
     async function fetchWithCache(url) {
       const key = 'pollen_cache:' + url;
       const stored = localStorage.getItem(key);
-      if (stored) {
-        const now = new Date().toLocaleTimeString();
-        document.getElementById('st').textContent = `キャッシュ利用 (${now})`;
-        return stored;
-      }
+      if (stored) return stored;
       try {
         const r = await fetch(url);
         if (!r.ok) throw new Error(`status ${r.status}`);
@@ -252,11 +277,49 @@
       }
     }
 
+    // 1日ごとに交互の背景帯を描画するプラグイン
+    const dayBandPlugin = {
+      id: 'dayBand',
+      beforeDraw(chart) {
+        if (!app.data.length) return;
+        const { ctx, scales: { x: xScale, y: yScale } } = chart;
+        const top = yScale.top;
+        const height = yScale.bottom - top;
+        // 1データポイント分の半幅（左右のはみ出し補正用）
+        const half = app.data.length > 1
+          ? (xScale.getPixelForValue(1) - xScale.getPixelForValue(0)) / 2
+          : 0;
+        // 偶数日: 薄いスレートグレー、奇数日: 透明
+        const colors = ['rgba(226,232,240,0.45)', 'rgba(0,0,0,0)'];
+
+        let curDay = null, startIdx = 0, band = 0;
+        ctx.save();
+        const fill = (s, e, b) => {
+          if (!colors[b % 2]) return;
+          ctx.fillStyle = colors[b % 2];
+          const x1 = xScale.getPixelForValue(s) - half;
+          const x2 = xScale.getPixelForValue(e) + half;
+          ctx.fillRect(x1, top, x2 - x1, height);
+        };
+        app.data.forEach((d, i) => {
+          const day = new Date(d.ts).toDateString();
+          if (day !== curDay) {
+            if (curDay !== null) { fill(startIdx, i - 1, band); band++; }
+            curDay = day;
+            startIdx = i;
+          }
+        });
+        if (curDay !== null) fill(startIdx, app.data.length - 1, band);
+        ctx.restore();
+      }
+    };
+
     let chart = null;
     function initChart() {
       const ctx = document.getElementById('chartCanvas').getContext('2d');
       chart = new Chart(ctx, {
         type: 'line',
+        plugins: [dayBandPlugin],
         data: { labels: [], datasets: [] },
         options: {
           responsive: true,
@@ -264,19 +327,29 @@
           scales: {
             x: {
               type: 'category',
+              afterBuildTicks: function(axis) {
+                // 6時間ごと（0, 6, 12, 18時）のみ目盛りを表示
+                axis.ticks = axis.ticks.filter(function(tick) {
+                  var i = tick.value;
+                  if (!app.data[i]) return false;
+                  return new Date(app.data[i].ts).getHours() % 6 === 0;
+                });
+              },
               ticks: {
-                maxRotation: 0,
+                maxRotation: 30,
                 minRotation: 0,
-                maxTicksLimit: 12,
-                callback: function(value, index) {
-                  if (!app.data[index]) return '';
-                  const date = new Date(app.data[index].ts);
+                callback: function(value) {
+                  // value = labels配列のインデックス（category スケール）
+                  if (!app.data[value]) return '';
+                  const date = new Date(app.data[value].ts);
                   const hour = date.getHours();
-                  // 各日の0時に日付を表示、その他は時刻のみ
+                  const mm = String(date.getMonth() + 1).padStart(2, '0');
+                  const dd = String(date.getDate()).padStart(2, '0');
+                  const hh = String(hour).padStart(2, '0');
                   if (hour === 0) {
-                    return [date.toLocaleDateString('ja-JP', {month:'2-digit', day:'2-digit'}), hour + '時'];
+                    return [`${mm}/${dd}`, '0:00'];  // 日付変わりは2行表示
                   }
-                  return hour + '時';
+                  return `${hh}:00`;
                 }
               },
               title: { display: true, text: '日時' }
@@ -309,13 +382,25 @@
     }
 
     async function fetchX() {
-      const btn = document.getElementById('fb'), st = document.getElementById('st');
+      const btn = document.getElementById('fb');
+      const st = document.getElementById('st');
+      const overlay = document.getElementById('loadingOverlay');
       const codes1 = JSON.parse(document.getElementById('t1').value);
       const codes2 = JSON.parse(document.getElementById('t2').value);
       const start = document.getElementById('sd').value.replace(/-/g,'');
       const end = document.getElementById('ed').value.replace(/-/g,'');
       if(!start||!end) return;
-      btn.disabled = true; st.textContent='データ取得中...';
+
+      // キャッシュ利用状況を事前にカウント
+      const allCodes = [...codes1, ...codes2];
+      const cachedCount = allCodes.filter(c =>
+        localStorage.getItem(`pollen_cache:${API}?citycode=${c}&start=${start}&end=${end}`)
+      ).length;
+
+      btn.disabled = true;
+      btn.textContent = '取得中...';
+      st.textContent = '';
+      overlay.style.display = 'flex';
       app.names = [
         document.getElementById('t1').selectedOptions[0].text,
         document.getElementById('t2').selectedOptions[0].text
@@ -334,11 +419,18 @@
         });
         app.data=Array.from(m.values()).sort((a,b)=>a.ts-b.ts);
         render();
-        st.textContent=`完了: ${app.data.length}件のデータ`;
+        const cacheNote = cachedCount === allCodes.length ? '（全てキャッシュ利用）'
+                        : cachedCount > 0 ? `（${cachedCount}/${allCodes.length}件キャッシュ利用）`
+                        : '';
+        st.textContent = `完了: ${app.data.length}件のデータ ${cacheNote}`;
       } catch(e){
         console.error('fetchX error', e);
         st.textContent = 'エラー発生: ' + (e.message || e);
-      } finally{btn.disabled=false;}
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'データ取得';
+        overlay.style.display = 'none';
+      }
     }
 
     function parse(txt,name){
